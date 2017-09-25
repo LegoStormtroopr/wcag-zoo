@@ -7,6 +7,19 @@ from io import BytesIO
 import logging
 from premailer import Premailer
 
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+
+# driver.get("http://www.python.org")
+# assert "Python" in driver.title
+# elem = driver.find_element_by_name("q")
+# elem.clear()
+# elem.send_keys("pycon")
+# elem.send_keys(Keys.RETURN)
+# assert "No results found." not in driver.page_source
+# driver.close()
+
+
 # From Premailer
 import cssutils
 import re
@@ -212,9 +225,9 @@ def build_msg(node, **kwargs):
     """
     error_dict = kwargs
     error_dict.update({
-        'xpath': node.getroottree().getpath(node),
-        'classes': node.get('class'),
-        'id': node.get('id'),
+        # 'xpath': node.getroottree().getpath(node),
+        'classes': node.get_attribute('class'),
+        'id': node.id,
     })
     return error_dict
 
@@ -276,6 +289,18 @@ class WCAGCommand(object):
         """
         return False
 
+    def get_xpath_of_node(self, node):
+        jscript = ("function getPathTo(node) {" + 
+            "  var stack = [];" + 
+            "  while(node.parentNode !== null) {" + 
+            "    stack.unshift(node.tagName);" + 
+            "    node = node.parentNode;" + 
+            "  }" + 
+            "  return stack.join('/');" + 
+            "}" + 
+            "return getPathTo(arguments[0]);")
+        return self.driver.execute_script(jscript, node);
+
     def check_skip_element(self, node):
         """
         Performs checking to see if an element can be skipped for validation, including check if it has an id or class to skip,
@@ -288,29 +313,34 @@ class WCAGCommand(object):
         """
         skip_node = False
         skip_message = []
-        for cc in node.get('class', "").split(' '):
+        classes = node.get_attribute('class') or ""
+        for cc in classes.split(' '):
             if cc in self.skip_these_classes:
-                skip_message.append("Skipped [%s] because node matches class [%s]\n    Text was: [%s]" % (self.tree.getpath(node), cc, node.text))
+                skip_message.append("Skipped [%s] because node matches class [%s]\n    Text was: [%s]" % (self.get_xpath_of_node(node), cc, node.text))
                 skip_node = True
-        if node.get('id', None) in self.skip_these_ids:
-            skip_message.append("Skipped [%s] because node id is [%s]\n    Text was: [%s]" % (self.tree.getpath(node), node.get('id'), node.text))
+        if node.get_attribute('id') in self.skip_these_ids:
+            skip_message.append("Skipped [%s] because node id is [%s]\n    Text was: [%s]" % (self.get_xpath_of_node(node), node.get('id'), node.text))
             skip_node = True
         if self.skip_element(node):
             skip_node = True
 
-        for styles in get_applicable_styles(node):
-            # skip hidden elements
-            if self.kwargs.get('ignore_hidden', False):
-                if "display" in styles.keys() and styles['display'].lower() == 'none':
-                    skip_message.append(
-                        "Skipped [%s] because display is none is [%s]\n    Text was: [%s]" % (self.tree.getpath(node), node.get('id'), node.text)
-                    )
-                    skip_node = True
-                if "visibility" in styles.keys() and styles['visibility'].lower() == 'hidden':
-                    skip_message.append(
-                        "Skipped [%s] because visibility is hidden is [%s]\n    Text was: [%s]" % (self.tree.getpath(node), node.get('id'), node.text)
-                    )
-                    skip_node = True
+        # print(dir(node))
+        # for styles in node.getComputedStyle(node):
+        #     # skip hidden elements
+        print()
+        if self.kwargs.get('ignore_hidden', False):
+            display = node.value_of_css_property('display')
+            if display is not None and display.lower() == 'none':
+                skip_message.append(
+                    "Skipped [%s] because display is none.\n    Text was: [%s]" % (self.get_xpath_of_node(node), node.get_attribute('innerText').strip())
+                )
+                skip_node = True
+            visibility = node.value_of_css_property('visibility')
+            if visibility is not None and visibility.lower() == 'hidden':
+                skip_message.append(
+                    "Skipped [%s] because visibility is hidden.\n    Text was: [%s]" % (self.get_xpath_of_node(node), node.text)
+                )
+                skip_node = True
 
         if skip_node:
             self.add_skipped(
@@ -331,8 +361,13 @@ class WCAGCommand(object):
         By default, returns a dictionary with the number of successful checks,
         and a list of failures, warnings and skipped elements.
         """
-        self.tree = self.get_tree(html)
-        self.validate_whole_document(html)
+        self.driver = webdriver.PhantomJS()
+        # self.driver.get("http://www.python.org")
+        # self.tree = self.get_tree(html)
+        # self.validate_whole_document(html)
+        print("file://."+html)
+        self.driver.get(html)
+        self.driver.save_screenshot("/home/ubuntu/workspace/test.png")
         self.run_validation_loop()
 
         return {
@@ -363,23 +398,23 @@ class WCAGCommand(object):
         """
         pass
 
-    def get_tree(self, html):
-        if not hasattr(self, '_tree'):
-            # Pre-parse
-            parser = etree.HTMLParser()
-            html = etree.parse(BytesIO(html), parser).getroot()
-            self._tree = Premoler(
-                html,
-                exclude_pseudoclasses=True,
-                method="html",
-                preserve_internal_links=True,
-                base_path=self.kwargs.get('staticpath', '.'),
-                include_star_selectors=True,
-                strip_important=False,
-                disable_validation=True,
-                media_rules=self.kwargs.get('media_rules', [])
-            ).transform()
-        return self._tree
+    # def get_tree(self, html):
+    #     if not hasattr(self, '_tree'):
+    #         # Pre-parse
+    #         parser = etree.HTMLParser()
+    #         html = etree.parse(BytesIO(html), parser).getroot()
+    #         self._tree = Premoler(
+    #             html,
+    #             exclude_pseudoclasses=True,
+    #             method="html",
+    #             preserve_internal_links=True,
+    #             base_path=self.kwargs.get('staticpath', '.'),
+    #             include_star_selectors=True,
+    #             strip_important=False,
+    #             disable_validation=True,
+    #             media_rules=self.kwargs.get('media_rules', [])
+    #         ).transform()
+    #     return self._tree
 
     def run_validation_loop(self, xpath=None, validator=None):
         """
@@ -387,7 +422,10 @@ class WCAGCommand(object):
         """
         if xpath is None:
             xpath = self.xpath
-        for element in self.tree.xpath(xpath):
+        
+        from selenium.webdriver.common.by import By
+        # for element in [self.driver.find_element(By.XPATH, xpath)]:
+        for element in self.driver.find_elements_by_xpath(xpath):
             if self.check_skip_element(element):
                 continue
             if not validator:
@@ -421,7 +459,7 @@ class WCAGCommand(object):
         Exposes the WCAG validator as a click-based command line interface tool.
         """
         @click.command(help=cls.__doc__)
-        @click.argument('filenames', required=False, nargs=-1, type=click.File('rb'))
+        @click.argument('filenames', required=False, nargs=-1, type=str) #click.File('rb'))
         @click.option('--level', type=click.Choice(['AA', 'AAA', 'A']), default=None, help='WCAG level to test against. Defaults to AA.')
         @click.option('-A', 'short_level', count=True, help='Shortcut for settings WCAG level, repeatable (also -AA, -AAA ')
         @click.option('--staticpath', default='.', help='Directory path to static files.')
@@ -449,9 +487,9 @@ class WCAGCommand(object):
                 print(cls.animal)
                 sys.exit(0)
             klass = cls(*args, **kwargs)
-            if len(filenames) == 0:
-                f = click.get_text_stream('stdin')
-                filenames = [f]
+            # if len(filenames) == 0:
+            #     f = click.get_text_stream('stdin')
+            #     filenames = [f]
 
             if json_dump:
                 import json
@@ -459,7 +497,7 @@ class WCAGCommand(object):
                 for file in filenames:
                     try:
                         html = file.read()
-                        results = klass.validate_document(html)
+                        results = klass.validate_document(file)
                     except:
                         raise
                         results = {'failures': ["Exception thrown"]}
@@ -489,15 +527,15 @@ class WCAGCommand(object):
 
                 print(json.dumps(output))
             else:
-                for f in filenames:
+                for file in filenames:
                     try:
-                        filename = f.name
+                        filename = file #.name
                         print_if(
                             "Starting - {filename} ... ".format(filename=filename), end="",
                             check=verbosity>0
                         )
-                        html = f.read()
-                        results = klass.validate_document(html)
+                        # html = f.read()
+                        results = klass.validate_document(file)
 
                         if verbosity == 1:
                             if len(results['failures']) > 0:

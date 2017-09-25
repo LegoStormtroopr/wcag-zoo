@@ -33,6 +33,8 @@ TECHNIQUE = {
 
 def normalise_color(color):
     rgba_color = None
+    if color is None:
+        color = "white"
     color = color.split("!", 1)[0].strip()  # remove any '!important' declarations
 
     if "transparent" in color or "inherit" in color:
@@ -198,7 +200,7 @@ class Molerat(WCAGCommand):
 
         if node.text is None or node.text.strip() == "":
             return True
-        if node.tag in ['script', 'style']:
+        if node.tag_name in ['script', 'style']:
             return True
 
     def validate_element(self, node):
@@ -208,21 +210,26 @@ class Molerat(WCAGCommand):
         backgrounds = [[254, 253, 252, 1]]  # White-ish
         fonts = [{'font-size': '10pt', 'font-weight': 'normal'}]
 
-        for styles in get_applicable_styles(node):
-            if "color" in styles.keys():
-                colors.append(normalise_color(styles['color']))
-            if "background-color" in styles.keys():
-                backgrounds.append(normalise_color(styles['background-color']))
-            font_rules = {}
-            for rule in styles.keys():
-                if 'font' in rule:
-                    font_rules[rule] = styles[rule]
-            fonts.append(font_rules)
+        # for styles in get_applicable_styles(node):
+        #     if "color" in styles.keys():
+        #         colors.append(normalise_color(styles['color']))
+        #     if "background-color" in styles.keys():
+        #         backgrounds.append(normalise_color(styles['background-color']))
+        #     font_rules = {}
+        #     for rule in styles.keys():
+        #         if 'font' in rule:
+        #             font_rules[rule] = styles[rule]
+        #     fonts.append(font_rules)
+
+        print(node.text, node.value_of_css_property('color'), node.value_of_css_property('background-color'))
+        colors = [normalise_color(node.value_of_css_property('color'))]
+        backgrounds = [normalise_color(node.value_of_css_property('background-color'))] #,[254, 253, 252, 1]]
+        print(node.text, colors, backgrounds)
 
         font_size = calculate_font_size(fonts)
         font_is_bold = is_font_bold(fonts)
-        foreground = generate_opaque_color(colors)
-        background = generate_opaque_color(backgrounds)
+        foreground = list(map(int, colors[0][0:3])) #generate_opaque_color(colors)
+        background = list(map(int, backgrounds[0][0:3])) #generate_opaque_color(backgrounds)
         ratio = calculate_luminocity_ratio(foreground, background)
 
         font_size_type = 'normal'
@@ -234,6 +241,7 @@ class Molerat(WCAGCommand):
 
         ratio_threshold = WCAG_LUMINOCITY_RATIO_THRESHOLD[self.level][font_size_type]
         technique = TECHNIQUE[self.level][font_size_type]
+        # print(webcolors.rgb_to_hex(map(int,foreground))[1:])
 
         if ratio < ratio_threshold:
             disp_text = nice_console_text(node.text)
@@ -244,7 +252,7 @@ class Molerat(WCAGCommand):
                 u"\n    Colored text was: {color_text}"
                 u"\n    Computed font-size was: {font_size} {bold} ({font_size_type})"
             ).format(
-                xpath=node.getroottree().getpath(node),
+                xpath="////", #node.getroottree().getpath(node),
                 text=disp_text,
                 fg=foreground,
                 bg=background,
